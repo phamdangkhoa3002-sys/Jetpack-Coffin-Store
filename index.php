@@ -51,9 +51,9 @@ getData($sqlView);
     exit();
 }
 
-if(!isset($_SESSION['user'])){
-    header("location:login.php");
-    exit();
+ if(!isset($_SESSION['user'])){
+     header("location:login.php");
+     exit();
 }
 
     require("cons.php");

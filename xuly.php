@@ -1,59 +1,100 @@
+
 <?php
 session_start();
-
 include 'cons.php';
 
-if(!isset($_SESSION['fail'])){
+if ($_SERVER["REQUEST_METHOD"] != "POST") {
+    header("Location: login.php");
+    exit();
+}
+
+if (!isset($_SESSION['fail'])) {
     $_SESSION['fail'] = 0;
 }
 
-if($_SESSION['fail'] >= 3){
+if ($_SESSION['fail'] >= 3) {
     die("Bạn đã nhập sai quá nhiều lần!");
 }
 
-$username = $_POST['username'];
-$password = $_POST['password'];
+$username = trim($_POST['username'] ?? '');
+$password = $_POST['password'] ?? '';
 
-$sql = "SELECT * FROM users
-        WHERE username='$username'
-        AND password='$password'";
+$sql = "SELECT * FROM users WHERE username = ?";
 
-$result = getData($sql);
+$stmt = mysqli_prepare($conn, $sql);
+mysqli_stmt_bind_param($stmt, "s", $username);
+mysqli_stmt_execute($stmt);
 
-if(mysqli_num_rows($result) > 0){
+$result = mysqli_stmt_get_result($stmt);
+
+if (mysqli_num_rows($result) > 0) {
 
     $row = mysqli_fetch_assoc($result);
+    $stored_password = $row['password'];
 
-    if($row['khoa'] == 0){
+    // Check modern hashed passwords
+    $valid_password = password_verify($password, $stored_password);
 
-        die("Tài khoản đã bị khóa!");
+    // Support old plain-text passwords
+    if (!$valid_password && hash_equals($stored_password, $password)) {
+        $valid_password = true;
     }
 
-    $_SESSION['user'] = $row['username'];
+    // Support old MD5 passwords
+    if (!$valid_password && hash_equals($stored_password, md5($password))) {
+        $valid_password = true;
+    }
 
-    $_SESSION['idgroup'] = $row['idgroup'];
+    if ($valid_password) {
 
-    $_SESSION['ten'] = $row['ten'];
+        if ($row['khoa'] == 0) {
+            die("Tài khoản đã bị khóa!");
+        }
 
-    $_SESSION['fail'] = 0;
+        // Upgrade old passwords to secure hashes
+        if (!password_verify($password, $stored_password)) {
 
-    header("location:index.php");
+            $new_password = password_hash($password, PASSWORD_DEFAULT);
 
-}else{
+            $update = mysqli_prepare(
+                $conn,
+                "UPDATE users SET password = ? WHERE id = ?"
+            );
+
+            mysqli_stmt_bind_param(
+                $update,
+                "si",
+                $new_password,
+                $row['id']
+            );
+
+            mysqli_stmt_execute($update);
+            mysqli_stmt_close($update);
+        }
+
+        $_SESSION['user'] = $row['username'];
+        $_SESSION['idgroup'] = $row['idgroup'];
+        $_SESSION['ten'] = $row['ten'];
+        $_SESSION['fail'] = 0;
+
+        header("Location: index.php");
+        exit();
+
+    } else {
+
+        $_SESSION['fail']++;
+
+        echo "Sai tài khoản hoặc mật khẩu!<br>";
+        echo "Số lần sai: " . $_SESSION['fail'];
+    }
+
+} else {
 
     $_SESSION['fail']++;
 
-    echo "Sai tài khoản hoặc mật khẩu!";
-
-    echo "<br>";
-
+    echo "Sai tài khoản hoặc mật khẩu!<br>";
     echo "Số lần sai: " . $_SESSION['fail'];
-
-    if($_SESSION['fail'] >= 3){
-
-        echo "<br><br>";
-
-        echo "Bạn đã bị khóa!";
-    }
 }
+
+mysqli_stmt_close($stmt);
 ?>
